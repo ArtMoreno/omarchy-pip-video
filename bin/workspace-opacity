@@ -1,0 +1,95 @@
+#!/bin/bash
+# omarchy:summary=Adjust opacity of every window on the current workspace to see the video wallpaper behind.
+set -euo pipefail
+
+STATE_FILE="$HOME/.cache/workspace-opacity.json"
+STEP=0.1
+MIN=0.3
+MAX=1.0
+
+usage() {
+  echo "Usage: workspace-opacity {up|down|set <${MIN}-${MAX}>|reset}"
+}
+
+notify() { omarchy-notification-send -u low "$1" >/dev/null 2>&1 || true; }
+
+current_ws() { hyprctl -j activeworkspace | jq -r '.id'; }
+
+level_for() {
+  local ws=$1
+  jq -r --arg ws "$ws" '.[$ws] // 1.0' "$STATE_FILE" 2>/dev/null || echo 1.0
+}
+
+save_level() {
+  local ws=$1 level=$2 tmp
+  local base='{}'
+  [[ -s "$STATE_FILE" ]] && base=$(cat "$STATE_FILE")
+  tmp=$(printf '%s' "$base" | jq --arg ws "$ws" --argjson level "$level" '.[$ws] = $level')
+  mkdir -p "$(dirname "$STATE_FILE")"
+  printf '%s' "$tmp" > "$STATE_FILE"
+}
+
+clear_level() {
+  local ws=$1 tmp
+  [[ -s "$STATE_FILE" ]] || return 0
+  tmp=$(jq --arg ws "$ws" 'del(.[$ws])' "$STATE_FILE")
+  printf '%s' "$tmp" > "$STATE_FILE"
+}
+
+bump() {
+  awk -v l="$1" -v d="$2" -v min="$MIN" -v max="$MAX" 'BEGIN { v = l + d; if (v < min) v = min; if (v > max) v = max; printf "%.2f", v }'
+}
+
+set_props() {
+  local addr=$1 level=$2
+  hyprctl dispatch "hl.dsp.window.set_prop({ window = \"address:$addr\", prop = \"opacity\", value = \"$level\" })" >/dev/null 2>&1 || true
+  hyprctl dispatch "hl.dsp.window.set_prop({ window = \"address:$addr\", prop = \"opacity_inactive\", value = \"$level\" })" >/dev/null 2>&1 || true
+}
+
+apply_level() {
+  local ws=$1 level=$2 addr
+  while read -r addr; do
+    [[ -n "$addr" ]] && set_props "$addr" "$level"
+  done < <(hyprctl -j clients | jq -r --argjson ws "$ws" '.[] | select(.mapped and .workspace.id == $ws) | .address')
+}
+
+percent() { awk -v l="$1" 'BEGIN { printf "%d", l * 100 }'; }
+
+ws=$(current_ws)
+
+case "${1:-}" in
+  up)
+    level=$(bump "$(level_for "$ws")" "$STEP")
+    save_level "$ws" "$level"
+    apply_level "$ws" "$level"
+    notify "Workspace $ws opacity: $(percent "$level")%"
+    ;;
+  down)
+    level=$(bump "$(level_for "$ws")" "-$STEP")
+    save_level "$ws" "$level"
+    apply_level "$ws" "$level"
+    notify "Workspace $ws opacity: $(percent "$level")%"
+    ;;
+  set)
+    [[ $# -ge 2 ]] || { usage >&2; exit 1; }
+    level=$(bump "$2" 0)
+    save_level "$ws" "$level"
+    apply_level "$ws" "$level"
+    notify "Workspace $ws opacity: $(percent "$level")%"
+    ;;
+  reset)
+    clear_level "$ws"
+    apply_level "$ws" 1.0
+    notify "Workspace $ws opacity restored"
+    ;;
+  reapply)
+    level=$(level_for "$ws")
+    if awk -v l="$level" 'BEGIN { exit (l < 0.999) ? 0 : 1 }'; then
+      apply_level "$ws" "$level"
+    fi
+    ;;
+  *)
+    usage >&2
+    exit 1
+    ;;
+esac

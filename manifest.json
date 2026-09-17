@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "id": "artmrn.pip-video",
+  "name": "PiP Video",
+  "version": "1.0.0",
+  "author": "ArtMoreno",
+  "license": "MIT",
+  "homepage": "https://github.com/ArtMoreno/omarchy-pip-video",
+  "description": "YouTube picture-in-picture polish (rounded corners, resizable, SUPER+pinch and hjkl controls), video-as-wallpaper via mpvpaper, and per-workspace see-through opacity.",
+  "kinds": ["service"],
+  "entryPoints": {
+    "service": "Service.qml"
+  }
+}

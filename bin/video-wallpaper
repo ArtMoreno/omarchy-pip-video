@@ -1,0 +1,78 @@
+#!/bin/bash
+# omarchy:summary=Play a video (or YouTube URL) as the wallpaper via mpvpaper.
+set -euo pipefail
+
+SOCKET=/tmp/mpvpaper.sock
+STATE_FILE="$HOME/.cache/video-wallpaper/last"
+
+usage() {
+  echo "Usage: video-wallpaper {set <url|path>|clip|stop|pause|mute|status}"
+}
+
+notify() { omarchy-notification-send -u low "$1" >/dev/null 2>&1 || true; }
+
+running() { pgrep -x mpvpaper >/dev/null 2>&1; }
+
+ipc() { [ -S "$SOCKET" ] && printf '%s\n' "$1" | socat - "$SOCKET" >/dev/null 2>&1; }
+
+resolve_media() {
+  local media=$1
+  if [[ "$media" =~ ^https?:// ]]; then
+    printf '%s' "$media"
+  elif [[ -f "$media" ]]; then
+    realpath -- "$media"
+  else
+    return 1
+  fi
+}
+
+start() {
+  local media
+  media=$(resolve_media "$1") || { notify "Video wallpaper: not a URL or existing file"; exit 1; }
+  command -v mpvpaper >/dev/null 2>&1 || { notify "Video wallpaper: install mpvpaper first (omarchy pkg aur add mpvpaper)"; exit 1; }
+  pkill -x mpvpaper 2>/dev/null || true
+  rm -f "$SOCKET"
+  mkdir -p "$(dirname "$STATE_FILE")"
+  printf '%s' "$media" > "$STATE_FILE"
+  if mpvpaper -pf -o "loop-playlist input-ipc-server=$SOCKET" ALL "$media" >/dev/null 2>&1; then
+    notify "Video wallpaper on"
+  else
+    notify "Video wallpaper: mpvpaper failed to start"
+    exit 1
+  fi
+}
+
+case "${1:-}" in
+  set)
+    [[ $# -ge 2 ]] || { usage >&2; exit 1; }
+    start "$2"
+    ;;
+  clip)
+    media=$(wl-paste --no-newline 2>/dev/null | head -n1)
+    media="${media//[[:space:]]/}"
+    [[ -n "$media" ]] || { notify "Video wallpaper: clipboard is empty"; exit 1; }
+    start "$media"
+    ;;
+  stop)
+    pkill -x mpvpaper 2>/dev/null || true
+    rm -f "$SOCKET"
+    notify "Video wallpaper off"
+    ;;
+  pause)
+    ipc "cycle pause" && notify "Video wallpaper: paused/resumed" || notify "Video wallpaper: not running"
+    ;;
+  mute)
+    ipc "cycle mute" && notify "Video wallpaper: muted/unmuted" || notify "Video wallpaper: not running"
+    ;;
+  status)
+    if running; then
+      echo "running: $(cat "$STATE_FILE" 2>/dev/null || echo unknown)"
+    else
+      echo "stopped"
+    fi
+    ;;
+  *)
+    usage >&2
+    exit 1
+    ;;
+esac

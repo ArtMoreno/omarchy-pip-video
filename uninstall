@@ -1,0 +1,40 @@
+#!/bin/bash
+# Remove what ./install added: the ~/.local/bin symlinks and the managed
+# Hyprland config blocks. The plugin itself is removed separately with
+# `omarchy plugin remove artmrn.pip-video`.
+
+set -uo pipefail
+
+PLUGIN_ID="artmrn.pip-video"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+HYPR_DIR="$HOME/.config/hypr"
+BIN_DIR="$HOME/.local/bin"
+
+unlink_bin() {
+  local dest="$BIN_DIR/$1"
+  if [[ -L $dest && "$(readlink -f "$dest")" == "$(readlink -f "$SCRIPT_DIR/bin/$1")" ]]; then
+    rm -f "$dest"
+    echo "removed: $dest"
+  else
+    echo "kept: $dest (not ours)"
+  fi
+}
+
+remove_block() {
+  local file="$1"
+  if grep -qF -- "-- BEGIN $PLUGIN_ID" "$file" 2>/dev/null; then
+    sed -i "/-- BEGIN $PLUGIN_ID/,/-- END $PLUGIN_ID/d" "$file"
+    echo "removed: $file block"
+  else
+    echo "absent: $file block"
+  fi
+}
+
+unlink_bin video-wallpaper
+unlink_bin workspace-opacity
+unlink_bin omarchy-pip-video
+remove_block "$HYPR_DIR/hyprland.lua"
+remove_block "$HYPR_DIR/bindings.lua"
+
+hyprctl reload >/dev/null 2>&1
+echo "Uninstalled $PLUGIN_ID. Config backups (*.bak) were left in place."

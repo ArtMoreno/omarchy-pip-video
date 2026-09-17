@@ -1,0 +1,82 @@
+#!/bin/bash
+# Install artmrn.pip-video: symlinks the helpers into ~/.local/bin and sources
+# the Hyprland snippets from your config with your explicit consent.
+#
+# Idempotent: rerunning skips what is already installed. Backs configs up
+# before touching them and rolls back if Hyprland reports config errors.
+
+set -uo pipefail
+
+PLUGIN_ID="artmrn.pip-video"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+HYPR_DIR="$HOME/.config/hypr"
+BIN_DIR="$HOME/.local/bin"
+BEGIN="-- BEGIN $PLUGIN_ID"
+END="-- END $PLUGIN_ID"
+ASSUME_YES=0
+[[ "${1:-}" == "--yes" || "${1:-}" == "-y" ]] && ASSUME_YES=1
+
+fail() { echo "install: $*" >&2; exit 1; }
+
+if (( ! ASSUME_YES )); then
+  if [[ -t 0 && -t 1 ]] && command -v gum >/dev/null 2>&1; then
+    gum confirm "Install $PLUGIN_ID? Appends managed blocks to ~/.config/hypr/hyprland.lua and bindings.lua (backed up first) and symlinks 3 helpers into ~/.local/bin." || exit 1
+  else
+    fail "pass --yes to install non-interactively"
+  fi
+fi
+
+link_bin() {
+  local source="$SCRIPT_DIR/bin/$1" dest="$BIN_DIR/$1"
+  mkdir -p "$BIN_DIR" || fail "cannot create $BIN_DIR"
+  if [[ -L $dest ]]; then
+    [[ "$(readlink -f "$dest")" == "$(readlink -f "$source")" ]] && { echo "linked: $dest"; return 0; }
+    rm -f "$dest"
+  elif [[ -e $dest ]]; then
+    [[ -e $dest.bak ]] || mv "$dest" "$dest.bak"
+    echo "backed up: $dest.bak"
+  fi
+  ln -s "$source" "$dest" || fail "could not link $dest"
+  echo "linked: $dest"
+}
+
+add_block() {
+  local file="$1" snippet="$2"
+  [[ -f $file ]] || fail "$file not found"
+  if grep -qF -- "$BEGIN" "$file"; then
+    echo "present: $file block"
+    return 0
+  fi
+  [[ -e $file.bak ]] || cp "$file" "$file.bak"
+  {
+    printf '%s\n' "$BEGIN"
+    printf 'dofile("%s")\n' "$snippet"
+    printf '%s\n' "$END"
+  } >> "$file"
+  echo "added: $file block"
+}
+
+link_bin video-wallpaper
+link_bin workspace-opacity
+link_bin omarchy-pip-video
+add_block "$HYPR_DIR/hyprland.lua" "$SCRIPT_DIR/hypr/pip-video.lua"
+add_block "$HYPR_DIR/bindings.lua" "$SCRIPT_DIR/hypr/pip-video-bindings.lua"
+
+hyprctl reload >/dev/null 2>&1
+sleep 1
+errors=$(hyprctl configerrors 2>/dev/null)
+if [[ -n "$errors" ]]; then
+  echo "Hyprland reported errors, rolling back:" >&2
+  printf '%s\n' "$errors" >&2
+  [[ -e "$HYPR_DIR/hyprland.lua.bak" ]] && cp "$HYPR_DIR/hyprland.lua.bak" "$HYPR_DIR/hyprland.lua"
+  [[ -e "$HYPR_DIR/bindings.lua.bak" ]] && cp "$HYPR_DIR/bindings.lua.bak" "$HYPR_DIR/bindings.lua"
+  hyprctl reload >/dev/null 2>&1
+  fail "rolled back"
+fi
+
+cat <<NOTE
+Installed $PLUGIN_ID.
+Next: enable the plugin in the shell, then install mpvpaper for video
+wallpapers: omarchy pkg aur add mpvpaper
+Checkup anytime: omarchy-pip-video doctor
+NOTE

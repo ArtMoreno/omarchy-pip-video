@@ -1,0 +1,122 @@
+#!/bin/bash
+# omarchy:summary=PiP Video control and self-check (doctor/status).
+set -uo pipefail
+
+PLUGIN_ID="artmrn.pip-video"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+BIN_DIR="$HOME/.local/bin"
+HYPR_DIR="$HOME/.config/hypr"
+
+usage() {
+  cat <<USAGE
+Usage: omarchy-pip-video {doctor [--on-load]|status}
+
+  doctor            Check helpers, config blocks, dependencies, Hyprland errors
+  doctor --on-load  Same, but quiet when healthy (used by Service.qml)
+  status            One-line state: video wallpaper + workspace opacity
+USAGE
+}
+
+notify() { omarchy-notification-send -u low "$1" >/dev/null 2>&1 || true; }
+
+problems=()
+
+check_bins() {
+  local name
+  for name in video-wallpaper workspace-opacity omarchy-pip-video; do
+    if [[ -x "$BIN_DIR/$name" ]]; then
+      echo "  ok       $BIN_DIR/$name"
+    else
+      echo "  missing  $BIN_DIR/$name (run ./install)"
+      problems+=("helper $name not linked")
+    fi
+  done
+}
+
+check_blocks() {
+  local keys_tmp="$1"
+  if grep -qF -- "-- BEGIN $PLUGIN_ID" "$HYPR_DIR/hyprland.lua" 2>/dev/null \
+  && grep -qF -- "-- BEGIN $PLUGIN_ID" "$HYPR_DIR/bindings.lua" 2>/dev/null; then
+    echo "  ok       managed config blocks"
+    return 0
+  fi
+  if grep -qF "YouTube PiP smaller" "$keys_tmp" 2>/dev/null \
+  && grep -qF "Video wallpaper from clipboard" "$keys_tmp" 2>/dev/null \
+  && grep -qF "Workspace windows more transparent" "$keys_tmp" 2>/dev/null; then
+    echo "  ok       binds registered live (inline install)"
+    return 0
+  fi
+  echo "  missing  config blocks and live binds (run ./install)"
+  problems+=("hyprland config")
+  return 1
+}
+
+check_deps() {
+  local dep
+  for dep in hyprctl jq wl-paste socat yt-dlp; do
+    if command -v "$dep" >/dev/null 2>&1; then
+      echo "  ok       $dep"
+    else
+      echo "  missing  $dep"
+      problems+=("dependency $dep")
+    fi
+  done
+  if command -v mpvpaper >/dev/null 2>&1; then
+    echo "  ok       mpvpaper"
+  else
+    echo "  missing  mpvpaper (video wallpaper needs: omarchy pkg aur add mpvpaper)"
+    problems+=("mpvpaper")
+  fi
+}
+
+check_hyprland() {
+  local errors
+  errors=$(hyprctl configerrors 2>/dev/null)
+  if [[ -z "$errors" ]]; then
+    echo "  ok       hyprctl configerrors clean"
+  else
+    echo "  errors   hyprctl configerrors:"
+    printf '%s\n' "$errors" | sed 's/^/    /'
+    problems+=("hyprland config errors")
+  fi
+}
+
+cmd_doctor() {
+  local on_load=0
+  [[ "${1:-}" == "--on-load" ]] && on_load=1
+  problems=()
+  local keys_tmp out_tmp report ret=0
+  keys_tmp=$(mktemp)
+  out_tmp=$(mktemp)
+  omarchy menu keybindings --print >"$keys_tmp" 2>/dev/null || true
+  { check_bins; check_blocks "$keys_tmp"; check_deps; check_hyprland; } >"$out_tmp" 2>&1
+  report=$(cat "$out_tmp")
+  rm -f "$keys_tmp" "$out_tmp"
+  if (( ${#problems[@]} == 0 )); then
+    (( on_load )) || printf '%s\n' "$report"
+    return 0
+  fi
+  ret=1
+  if (( on_load )); then
+    notify "PiP Video setup incomplete: ${problems[0]} (run omarchy-pip-video doctor)"
+  else
+    printf '%s\n' "$report"
+    echo "problems: ${problems[*]}"
+  fi
+  return 1
+}
+
+cmd_status() {
+  "$BIN_DIR/video-wallpaper" status 2>/dev/null || echo "video wallpaper: helper missing"
+  local ws level
+  ws=$(hyprctl -j activeworkspace 2>/dev/null | jq -r '.id' 2>/dev/null || echo "?")
+  level=$(jq -r --arg ws "$ws" '.[$ws] // 1.0' "$HOME/.cache/workspace-opacity.json" 2>/dev/null || echo 1.0)
+  echo "workspace $ws opacity: $level"
+}
+
+case "${1:-}" in
+  doctor) shift; cmd_doctor "$@" ;;
+  status) shift; cmd_status "$@" ;;
+  --help | help | "-h" | "") usage ;;
+  *) echo "omarchy-pip-video: unknown command: $1" >&2; usage >&2; exit 1 ;;
+esac
