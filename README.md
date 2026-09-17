@@ -5,7 +5,7 @@ instead of the sharp-edged default, resize it with `SUPER` + touchpad pinch or
 `SUPER+ALT` + `H`/`L`/`J`/`U`, play any YouTube video as your wallpaper, and
 fade each workspace translucent to watch it behind your apps.
 
-![PiP Video preview](preview.png)
+![PiP Video preview](preview.png?raw=true)
 
 ## Features
 
