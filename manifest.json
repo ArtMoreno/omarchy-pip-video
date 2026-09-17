@@ -7,8 +7,16 @@
   "license": "MIT",
   "homepage": "https://github.com/ArtMoreno/omarchy-pip-video",
   "description": "YouTube picture-in-picture polish (rounded corners, resizable, SUPER+pinch and hjkl controls), video-as-wallpaper via mpvpaper, and per-workspace see-through opacity.",
-  "kinds": ["service"],
+  "kinds": ["service", "bar-widget"],
   "entryPoints": {
-    "service": "Service.qml"
+    "service": "Service.qml",
+    "barWidget": "PiPVideo.qml"
+  },
+  "barWidget": {
+    "displayName": "PiP Video",
+    "description": "Video wallpaper, PiP resize and workspace fade controls with settings and how-to-use",
+    "category": "System",
+    "allowMultiple": false,
+    "defaultSection": "right"
   }
 }

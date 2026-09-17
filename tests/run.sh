@@ -22,6 +22,16 @@ if luac -p "$REPO/hypr/pip-video.lua" "$REPO/hypr/pip-video-bindings.lua" 2>/dev
 else
   fail "hypr lua parses"
 fi
+if command -v qmllint >/dev/null 2>&1 || [[ -x /usr/lib/qt6/bin/qmllint ]]; then
+  qmlint_bin=$(command -v qmllint 2>/dev/null || echo /usr/lib/qt6/bin/qmllint)
+  if "$qmlint_bin" "$REPO/PiPVideo.qml" "$REPO/Service.qml" 2>&1 | grep -q "^Error"; then
+    fail "qml parses"
+  else
+    pass "qml parses"
+  fi
+else
+  skip "qmllint (not installed)"
+fi
 echo "== shipped files load in live Hyprland =="
 rule_out=$(hyprctl eval "dofile(\"$REPO/hypr/pip-video.lua\")" 2>&1)
 if [[ -z "$rule_out" || "$rule_out" == "ok" ]]; then
@@ -163,6 +173,34 @@ if [[ -n "$ws_addr" && "$ws_addr" != "null" ]]; then
   [[ "$(hyprctl getprop "address:$ws_addr" opacity 2>/dev/null)" == "1" ]] && pass "opacity reset" || fail "opacity reset"
 else
   skip "workspace opacity (no window on workspace $ws)"
+fi
+
+echo "== settings =="
+prev_step=$("$REPO/bin/omarchy-pip-video" get opacity_step 2>/dev/null)
+"$REPO/bin/omarchy-pip-video" set opacity_step 0.2 >/dev/null 2>&1
+[[ "$("$REPO/bin/omarchy-pip-video" get opacity_step 2>/dev/null)" == "0.2" ]] && pass "set/get opacity_step" || fail "set/get opacity_step"
+"$REPO/bin/workspace-opacity" reset >/dev/null 2>&1
+"$REPO/bin/workspace-opacity" down >/dev/null 2>&1
+down_level=$(jq -r --arg ws "$ws" '.[$ws] // 1.0' "$HOME/.cache/workspace-opacity.json" 2>/dev/null)
+if awk -v v="$down_level" 'BEGIN { exit (v >= 0.79 && v <= 0.81) ? 0 : 1 }'; then pass "step honored (0.2)"; else fail "step honored (0.2, got $down_level)"; fi
+"$REPO/bin/omarchy-pip-video" set opacity_step "$prev_step" >/dev/null 2>&1
+"$REPO/bin/workspace-opacity" reset >/dev/null 2>&1
+if "$REPO/bin/omarchy-pip-video" set opacity_step 9 >/dev/null 2>&1; then fail "rejects bad step"; else pass "rejects bad step"; fi
+if "$REPO/bin/omarchy-pip-video" set bogus 1 >/dev/null 2>&1; then fail "rejects bad key"; else pass "rejects bad key"; fi
+"$REPO/bin/omarchy-pip-video" howto 2>/dev/null | grep -q "SUPER+ALT+V" && pass "howto" || fail "howto"
+if command -v mpvpaper >/dev/null 2>&1 && command -v ffmpeg >/dev/null 2>&1; then
+  "$REPO/bin/omarchy-pip-video" set start_muted 1 >/dev/null 2>&1
+  ffmpeg -hide_banner -loglevel error -y -f lavfi -i testsrc2=duration=2:size=320x180:rate=10 /tmp/pipvideo-settings-test.mp4
+  "$REPO/bin/video-wallpaper" set /tmp/pipvideo-settings-test.mp4 >/dev/null 2>&1
+  sleep 1
+  if pgrep -a mpvpaper 2>/dev/null | grep -q "no-audio"; then pass "start_muted honored"; else fail "start_muted honored"; fi
+  "$REPO/bin/video-wallpaper" stop >/dev/null 2>&1
+  sleep 0.5
+  pgrep -x mpvpaper >/dev/null 2>&1 && fail "stop kills player" || pass "stop kills player"
+  "$REPO/bin/omarchy-pip-video" set start_muted 0 >/dev/null 2>&1
+  rm -f /tmp/pipvideo-settings-test.mp4
+else
+  skip "start_muted live (needs mpvpaper + ffmpeg)"
 fi
 
 echo "== video wallpaper =="

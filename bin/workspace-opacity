@@ -3,9 +3,28 @@
 set -euo pipefail
 
 STATE_FILE="$HOME/.cache/workspace-opacity.json"
+SETTINGS_FILE="$HOME/.config/artmrn.pip-video/settings.conf"
 STEP=0.1
 MIN=0.3
 MAX=1.0
+
+setting() {
+  local key=$1 default=$2 value
+  value=$(grep -E "^$key=" "$SETTINGS_FILE" 2>/dev/null | tail -n1 | cut -d= -f2-)
+  printf '%s' "${value:-$default}"
+}
+
+step_value() {
+  local s
+  s=$(setting opacity_step "$STEP")
+  if awk -v s="$s" 'BEGIN { exit (s >= 0.05 && s <= 0.25) ? 0 : 1 }' 2>/dev/null; then
+    printf '%s' "$s"
+  else
+    printf '%s' "$STEP"
+  fi
+}
+
+STEP=$(step_value)
 
 usage() {
   echo "Usage: workspace-opacity {up|down|set <${MIN}-${MAX}>|reset}"

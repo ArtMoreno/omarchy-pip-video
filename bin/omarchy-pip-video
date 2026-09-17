@@ -6,14 +6,19 @@ PLUGIN_ID="artmrn.pip-video"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BIN_DIR="$HOME/.local/bin"
 HYPR_DIR="$HOME/.config/hypr"
+SETTINGS_FILE="$HOME/.config/artmrn.pip-video/settings.conf"
 
 usage() {
   cat <<USAGE
-Usage: omarchy-pip-video {doctor [--on-load]|status}
+Usage: omarchy-pip-video {doctor [--on-load]|status|set KEY VALUE|get KEY|howto}
 
   doctor            Check helpers, config blocks, dependencies, Hyprland errors
   doctor --on-load  Same, but quiet when healthy (used by Service.qml)
   status            One-line state: video wallpaper + workspace opacity
+  set KEY VALUE     Change a setting (opacity_step 0.05-0.25, start_muted 0/1)
+  get KEY           Print a setting value
+  settings          Print all settings as KEY=VALUE lines (for the widget)
+  howto             Print the quick-start guide
 USAGE
 }
 
@@ -114,9 +119,74 @@ cmd_status() {
   echo "workspace $ws opacity: $level"
 }
 
+valid_setting() {
+  case "$1" in
+    opacity_step) awk -v s="$2" 'BEGIN { exit (s >= 0.05 && s <= 0.25) ? 0 : 1 }' 2>/dev/null ;;
+    start_muted) [[ "$2" == "0" || "$2" == "1" ]] ;;
+    *) return 1 ;;
+  esac
+}
+
+cmd_set() {
+  [[ $# -ge 2 ]] || { echo "usage: omarchy-pip-video set <opacity_step|start_muted> <value>" >&2; return 1; }
+  valid_setting "$1" "$2" || { echo "invalid setting: $1=$2" >&2; return 1; }
+  mkdir -p "$(dirname "$SETTINGS_FILE")"
+  local kept
+  kept=$(grep -vE "^$1=" "$SETTINGS_FILE" 2>/dev/null | grep -v '^$' || true)
+  if [[ -n "$kept" ]]; then
+    printf '%s\n%s=%s\n' "$kept" "$1" "$2" > "$SETTINGS_FILE"
+  else
+    printf '%s=%s\n' "$1" "$2" > "$SETTINGS_FILE"
+  fi
+  echo "$1=$2"
+}
+
+cmd_get() {
+  [[ $# -ge 1 ]] || { usage >&2; return 1; }
+  local default
+  case "$1" in
+    opacity_step) default="0.1" ;;
+    start_muted) default="0" ;;
+    *) echo "unknown setting: $1" >&2; return 1 ;;
+  esac
+  local value
+  value=$(grep -E "^$1=" "$SETTINGS_FILE" 2>/dev/null | tail -n1 | cut -d= -f2-)
+  printf '%s\n' "${value:-$default}"
+}
+
+cmd_settings() {
+  local key value
+  for key in opacity_step start_muted; do
+    value=$(cmd_get "$key" 2>/dev/null) || value=""
+    printf '%s=%s\n' "$key" "$value"
+  done
+}
+
+cmd_howto() { cat <<'HOWTO'
+PiP Video quick start
+  Watch YouTube, pop the video out (PiP), then:
+  SUPER+ALT+H / L      PiP smaller / bigger (keeps 16:9)
+  SUPER+ALT+J / U      PiP shorter / taller
+  SUPER + pinch        grow/shrink the PiP live (hold SUPER first)
+  SUPER + right-drag   resize any floating window
+Video wallpaper
+  Copy a YouTube URL, SUPER+ALT+V plays it behind all windows.
+  SUPER+ALT+P pause, SUPER+ALT+B mute, SUPER+ALT+C stop.
+See-through workspaces
+  SUPER+CTRL+[ / ]     fade this workspace to see the video behind apps.
+  SUPER+ALT+BACKSPACE  back to opaque. Each workspace keeps its level.
+Settings: omarchy-pip-video set opacity_step 0.15 | set start_muted 1
+Checkup: omarchy-pip-video doctor · Full guide in the plugin README.
+HOWTO
+}
+
 case "${1:-}" in
   doctor) shift; cmd_doctor "$@" ;;
   status) shift; cmd_status "$@" ;;
+  set) shift; cmd_set "$@" ;;
+  get) shift; cmd_get "$@" ;;
+  settings) shift; cmd_settings "$@" ;;
+  howto) shift; cmd_howto "$@" ;;
   --help | help | "-h" | "") usage ;;
   *) echo "omarchy-pip-video: unknown command: $1" >&2; usage >&2; exit 1 ;;
 esac

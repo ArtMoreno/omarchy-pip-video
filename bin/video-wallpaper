@@ -4,6 +4,7 @@ set -euo pipefail
 
 SOCKET=/tmp/mpvpaper.sock
 STATE_FILE="$HOME/.cache/video-wallpaper/last"
+SETTINGS_FILE="$HOME/.config/artmrn.pip-video/settings.conf"
 
 usage() {
   echo "Usage: video-wallpaper {set <url|path>|clip|stop|pause|mute|status}"
@@ -26,15 +27,30 @@ resolve_media() {
   fi
 }
 
+stop_all() {
+  # mpvpaper sometimes ignores SIGTERM, so escalate: TERM, brief wait, KILL.
+  pkill -x mpvpaper 2>/dev/null || true
+  local i
+  for i in $(seq 1 10); do
+    pgrep -x mpvpaper >/dev/null 2>&1 || break
+    sleep 0.2
+  done
+  pkill -9 -x mpvpaper 2>/dev/null || true
+  rm -f "$SOCKET"
+}
+
 start() {
   local media
   media=$(resolve_media "$1") || { notify "Video wallpaper: not a URL or existing file"; exit 1; }
   command -v mpvpaper >/dev/null 2>&1 || { notify "Video wallpaper: install mpvpaper first (omarchy pkg aur add mpvpaper)"; exit 1; }
-  pkill -x mpvpaper 2>/dev/null || true
-  rm -f "$SOCKET"
+  stop_all
   mkdir -p "$(dirname "$STATE_FILE")"
   printf '%s' "$media" > "$STATE_FILE"
-  if mpvpaper -pf -o "loop-playlist input-ipc-server=$SOCKET" ALL "$media" >/dev/null 2>&1; then
+  local mpv_opts="loop-playlist input-ipc-server=$SOCKET"
+  if [[ "$(grep -E '^start_muted=' "$SETTINGS_FILE" 2>/dev/null | tail -n1 | cut -d= -f2-)" == "1" ]]; then
+    mpv_opts="$mpv_opts no-audio"
+  fi
+  if mpvpaper -pf -o "$mpv_opts" ALL "$media" >/dev/null 2>&1; then
     notify "Video wallpaper on"
   else
     notify "Video wallpaper: mpvpaper failed to start"
@@ -54,8 +70,7 @@ case "${1:-}" in
     start "$media"
     ;;
   stop)
-    pkill -x mpvpaper 2>/dev/null || true
-    rm -f "$SOCKET"
+    stop_all
     notify "Video wallpaper off"
     ;;
   pause)

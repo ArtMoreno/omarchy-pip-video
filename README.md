@@ -11,12 +11,44 @@ fade each workspace translucent to watch it behind your apps.
 
 - **PiP polish** (Chromium + Firefox): floating, pinned, 12px rounded corners,
   4px resize border, pop-in animation.
-- **Resize the video**: `SUPER` + 2-finger pinch (live), `H`/`L` shrink/grow
+- **Resize the video**: `SUPER` + touchpad pinch (live), `H`/`L` shrink/grow
   (16:9 kept), `J`/`U` shorter/taller, or `SUPER` + right-click-drag.
 - **Video wallpaper**: copy a YouTube URL, `SUPER+ALT+V` — it plays behind all
   windows via `mpvpaper` (streams through `yt-dlp`). Pause/mute/stop included.
 - **See-through workspaces**: `SUPER+CTRL+[` / `]` fades every window on the
   current workspace; each workspace remembers its own level.
+- **Bar widget**: clickable buttons for everything above, two settings, and a
+  built-in how-to-use panel. No keybindings to memorize.
+
+## Bar widget (buttons, settings, how-to-use)
+
+Enable it after install:
+
+```bash
+omarchy bar put artmrn.pip-video --section right
+```
+
+Click the `PiP` icon in the bar for video controls (play from clipboard,
+pause, mute, stop), PiP resize buttons, workspace fade buttons, the current
+status, two settings, and a how-to-use summary:
+
+- **Fade step** (`opacity_step`, default `0.1`): how much each fade keypress
+  or button changes workspace opacity. Range `0.05`–`0.25`.
+- **Start muted** (`start_muted`, default off): start video wallpapers
+  without audio.
+
+Same settings from the terminal (validated, same limits):
+
+```bash
+omarchy-pip-video set opacity_step 0.15
+omarchy-pip-video set start_muted 1
+omarchy-pip-video get opacity_step
+omarchy-pip-video howto     # quick-start guide
+omarchy-pip-video status    # video + opacity state
+```
+
+Settings live in `~/.config/artmrn.pip-video/settings.conf` and apply
+immediately — no reload needed.
 
 ## Keybindings
 
