@@ -106,6 +106,10 @@ reloads Hyprland. Your `*.bak` backups stay where they are.
 - `hypr/pip-video-bindings.lua`: all keybindings; helpers resolve through
   `~/.local/bin`, so the file works on any machine.
 - `bin/video-wallpaper`: `mpvpaper` wrapper (set/clip/stop/pause/mute/status).
+  Its control socket lives in `$XDG_RUNTIME_DIR/artmrn.pip-video/`, with
+  a user-owned mode-0700 directory and a private creation mask. Unsafe
+  permissions, ownership, symlinks, and non-socket files are rejected.
+  The old shared `/tmp/mpvpaper.sock` is never connected to or removed.
 - `bin/workspace-opacity`: per-workspace opacity levels via `set_prop`.
 - `bin/omarchy-pip-video`: `doctor` (used by the shell service on load) and
   `status`.
@@ -113,6 +117,14 @@ reloads Hyprland. Your `*.bak` backups stay where they are.
   plugin says what is missing instead of failing silently.
 
 ## Tests
+
+Headless Linux security regression (no Hyprland or mpvpaper required):
+
+```bash
+python3 tests/runtime_socket.py
+```
+
+Desktop integration checks:
 
 ```bash
 ./tests/run.sh

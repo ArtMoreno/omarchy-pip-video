@@ -2,7 +2,35 @@
 # omarchy:summary=Play a video (or YouTube URL) as the wallpaper via mpvpaper.
 set -euo pipefail
 
-SOCKET=/tmp/mpvpaper.sock
+umask 077
+
+fail() { echo "video-wallpaper: $*" >&2; exit 1; }
+
+private_directory() {
+  [[ -d "$1" && ! -L "$1" && -O "$1" && "$(stat -c '%a' -- "$1")" == 700 ]] ||
+    fail "runtime directory must be owned by this user, mode 0700, and not a symlink"
+}
+
+RUNTIME=${XDG_RUNTIME_DIR:-}
+[[ "$RUNTIME" == /* && "$RUNTIME" != *[[:space:]]* ]] || fail "a private XDG_RUNTIME_DIR is required"
+RUNTIME=${RUNTIME%/}
+private_directory "$RUNTIME"
+[[ "$(realpath -e -- "$RUNTIME")" == "$RUNTIME" ]] || fail "runtime path must not contain symlinks"
+RUNTIME="$RUNTIME/artmrn.pip-video"
+if [[ ! -e "$RUNTIME" && ! -L "$RUNTIME" ]]; then
+  mkdir -m 700 -- "$RUNTIME" || fail "cannot create private runtime directory"
+fi
+private_directory "$RUNTIME"
+SOCKET="$RUNTIME/mpvpaper.sock"
+
+verify_socket() {
+  private_directory "$RUNTIME"
+  [[ ! -L "$SOCKET" ]] || fail "refusing symlink at control socket"
+  if [[ -e "$SOCKET" ]]; then
+    [[ -S "$SOCKET" && -O "$SOCKET" ]] || fail "refusing unsafe control socket"
+  fi
+}
+verify_socket
 STATE_FILE="$HOME/.cache/video-wallpaper/last"
 SETTINGS_FILE="$HOME/.config/artmrn.pip-video/settings.conf"
 
@@ -12,9 +40,9 @@ usage() {
 
 notify() { omarchy-notification-send -u low "$1" >/dev/null 2>&1 || true; }
 
-running() { pgrep -x mpvpaper >/dev/null 2>&1; }
+running() { pgrep -u "$EUID" -x mpvpaper >/dev/null 2>&1; }
 
-ipc() { [ -S "$SOCKET" ] && printf '%s\n' "$1" | socat - "$SOCKET" >/dev/null 2>&1; }
+ipc() { verify_socket; [ -S "$SOCKET" ] && printf '%s\n' "$1" | socat - "$SOCKET" >/dev/null 2>&1; }
 
 resolve_media() {
   local media=$1
@@ -29,14 +57,16 @@ resolve_media() {
 
 stop_all() {
   # mpvpaper sometimes ignores SIGTERM, so escalate: TERM, brief wait, KILL.
-  pkill -x mpvpaper 2>/dev/null || true
+  verify_socket
+  pkill -u "$EUID" -x mpvpaper 2>/dev/null || true
   local i
   for i in $(seq 1 10); do
-    pgrep -x mpvpaper >/dev/null 2>&1 || break
+    running || break
     sleep 0.2
   done
-  pkill -9 -x mpvpaper 2>/dev/null || true
-  rm -f "$SOCKET"
+  pkill -9 -u "$EUID" -x mpvpaper 2>/dev/null || true
+  verify_socket
+  if [[ -S "$SOCKET" ]]; then rm -- "$SOCKET"; fi
 }
 
 start() {
