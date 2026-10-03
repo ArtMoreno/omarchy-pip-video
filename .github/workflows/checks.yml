@@ -1,0 +1,21 @@
+name: Linux checks
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  helpers:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check shell syntax
+        run: bash -n install uninstall bin/* tests/run.sh
+      - name: Test installer and helper behavior
+        run: python3 -m unittest discover -s tests -p 'test_*.py' -v
+      - name: Check private wallpaper socket
+        run: python3 tests/runtime_socket.py

@@ -78,7 +78,7 @@ start() {
   printf '%s' "$media" > "$STATE_FILE"
   local mpv_opts="loop-playlist input-ipc-server=$SOCKET"
   if [[ "$(grep -E '^start_muted=' "$SETTINGS_FILE" 2>/dev/null | tail -n1 | cut -d= -f2-)" == "1" ]]; then
-    mpv_opts="$mpv_opts no-audio"
+    mpv_opts="$mpv_opts mute=yes"
   fi
   if mpvpaper -pf -o "$mpv_opts" ALL "$media" >/dev/null 2>&1; then
     notify "Video wallpaper on"
@@ -95,7 +95,6 @@ case "${1:-}" in
     ;;
   clip)
     media=$(wl-paste --no-newline 2>/dev/null | head -n1)
-    media="${media//[[:space:]]/}"
     [[ -n "$media" ]] || { notify "Video wallpaper: clipboard is empty"; exit 1; }
     start "$media"
     ;;

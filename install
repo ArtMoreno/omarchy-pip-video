@@ -5,7 +5,7 @@
 # Idempotent: rerunning skips what is already installed. Backs configs up
 # before touching them and rolls back if Hyprland reports config errors.
 
-set -uo pipefail
+set -euo pipefail
 
 PLUGIN_ID="artmrn.pip-video"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -26,6 +26,54 @@ if (( ! ASSUME_YES )); then
   fi
 fi
 
+# Back up this invocation, rather than reusing a .bak from an older install.
+# Keep the snapshot after success too, so replaced helpers remain recoverable.
+for file in "$HYPR_DIR/hyprland.lua" "$HYPR_DIR/bindings.lua"; do
+  [[ -f $file ]] || fail "$file not found"
+done
+for name in video-wallpaper workspace-opacity omarchy-pip-video; do
+  [[ -x "$SCRIPT_DIR/bin/$name" ]] || fail "helper $name not found"
+  [[ ! -d "$BIN_DIR/$name" ]] || fail "$BIN_DIR/$name is a directory"
+done
+BACKUP_ROOT="${XDG_STATE_HOME:-$HOME/.local/state}/$PLUGIN_ID"
+mkdir -p "$BACKUP_ROOT" "$BIN_DIR"
+BACKUP=$(mktemp -d "$BACKUP_ROOT/install.XXXXXXXX")
+mkdir "$BACKUP/config" "$BACKUP/bin"
+for name in hyprland.lua bindings.lua; do
+  cp -pL -- "$HYPR_DIR/$name" "$BACKUP/config/$name"
+done
+for name in video-wallpaper workspace-opacity omarchy-pip-video; do
+  dest="$BIN_DIR/$name"
+  if [[ -e $dest || -L $dest ]]; then
+    cp -a -- "$dest" "$BACKUP/bin/$name"
+  fi
+done
+
+committed=0
+rollback() {
+  local result=$? name
+  trap - EXIT
+  if (( ! committed )); then
+    echo "Restoring this install's snapshot: $BACKUP" >&2
+    for name in hyprland.lua bindings.lua; do
+      # Copy through any config symlink, preserving the user's layout.
+      cp -p -- "$BACKUP/config/$name" "$HYPR_DIR/$name" || result=1
+    done
+    for name in video-wallpaper workspace-opacity omarchy-pip-video; do
+      rm -f -- "$BIN_DIR/$name" || result=1
+      if [[ -e "$BACKUP/bin/$name" || -L "$BACKUP/bin/$name" ]]; then
+        cp -a -- "$BACKUP/bin/$name" "$BIN_DIR/$name" || result=1
+      fi
+    done
+    hyprctl reload >/dev/null 2>&1 || echo "Original files restored; Hyprland reload failed." >&2
+    result=1
+  fi
+  exit "$result"
+}
+trap rollback EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+
 link_bin() {
   local source="$SCRIPT_DIR/bin/$1" dest="$BIN_DIR/$1"
   mkdir -p "$BIN_DIR" || fail "cannot create $BIN_DIR"
@@ -33,8 +81,8 @@ link_bin() {
     [[ "$(readlink -f "$dest")" == "$(readlink -f "$source")" ]] && { echo "linked: $dest"; return 0; }
     rm -f "$dest"
   elif [[ -e $dest ]]; then
-    [[ -e $dest.bak ]] || mv "$dest" "$dest.bak"
-    echo "backed up: $dest.bak"
+    rm -f -- "$dest"
+    echo "backed up: $BACKUP/bin/$1"
   fi
   ln -s "$source" "$dest" || fail "could not link $dest"
   echo "linked: $dest"
@@ -47,10 +95,11 @@ add_block() {
     echo "present: $file block"
     return 0
   fi
-  [[ -e $file.bak ]] || cp "$file" "$file.bak"
+  local quoted
+  quoted=$(jq -Rn --arg path "$snippet" '$path')
   {
-    printf '%s\n' "$BEGIN"
-    printf 'dofile("%s")\n' "$snippet"
+    printf '\n%s\n' "$BEGIN"
+    printf 'dofile(%s)\n' "$quoted"
     printf '%s\n' "$END"
   } >> "$file"
   echo "added: $file block"
@@ -62,20 +111,19 @@ link_bin omarchy-pip-video
 add_block "$HYPR_DIR/hyprland.lua" "$SCRIPT_DIR/hypr/pip-video.lua"
 add_block "$HYPR_DIR/bindings.lua" "$SCRIPT_DIR/hypr/pip-video-bindings.lua"
 
-hyprctl reload >/dev/null 2>&1
+hyprctl reload >/dev/null 2>&1 || fail "could not reload Hyprland"
 sleep 1
-errors=$(hyprctl configerrors 2>/dev/null)
+errors=$(hyprctl configerrors 2>/dev/null) || fail "could not check Hyprland config"
 if [[ -n "$errors" ]]; then
   echo "Hyprland reported errors, rolling back:" >&2
   printf '%s\n' "$errors" >&2
-  [[ -e "$HYPR_DIR/hyprland.lua.bak" ]] && cp "$HYPR_DIR/hyprland.lua.bak" "$HYPR_DIR/hyprland.lua"
-  [[ -e "$HYPR_DIR/bindings.lua.bak" ]] && cp "$HYPR_DIR/bindings.lua.bak" "$HYPR_DIR/bindings.lua"
-  hyprctl reload >/dev/null 2>&1
-  fail "rolled back"
+  fail "invalid config"
 fi
+committed=1
 
 cat <<NOTE
 Installed $PLUGIN_ID.
+Backup: $BACKUP
 Next: enable the plugin in the shell, then install mpvpaper for video
 wallpapers: omarchy pkg aur add mpvpaper
 Checkup anytime: omarchy-pip-video doctor
