@@ -76,7 +76,11 @@ check_deps() {
 
 check_hyprland() {
   local errors
-  errors=$(hyprctl configerrors 2>/dev/null)
+  if ! errors=$(hyprctl configerrors 2>/dev/null); then
+    echo "  error    cannot contact Hyprland"
+    problems+=("hyprland unavailable")
+    return 1
+  fi
   if [[ -z "$errors" ]]; then
     echo "  ok       hyprctl configerrors clean"
   else

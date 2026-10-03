@@ -193,7 +193,7 @@ if command -v mpvpaper >/dev/null 2>&1 && command -v ffmpeg >/dev/null 2>&1; the
   ffmpeg -hide_banner -loglevel error -y -f lavfi -i testsrc2=duration=2:size=320x180:rate=10 /tmp/pipvideo-settings-test.mp4
   "$REPO/bin/video-wallpaper" set /tmp/pipvideo-settings-test.mp4 >/dev/null 2>&1
   sleep 1
-  if pgrep -a mpvpaper 2>/dev/null | grep -q "no-audio"; then pass "start_muted honored"; else fail "start_muted honored"; fi
+  if pgrep -a mpvpaper 2>/dev/null | grep -q "mute=yes"; then pass "start_muted honored"; else fail "start_muted honored"; fi
   "$REPO/bin/video-wallpaper" stop >/dev/null 2>&1
   sleep 0.5
   pgrep -x mpvpaper >/dev/null 2>&1 && fail "stop kills player" || pass "stop kills player"
