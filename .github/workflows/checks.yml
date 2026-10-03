@@ -14,7 +14,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Check shell syntax
-        run: bash -n install uninstall bin/* tests/run.sh
+        run: |
+          for script in install uninstall bin/* tests/run.sh; do
+            bash -n "$script"
+          done
       - name: Test installer and helper behavior
         run: python3 -m unittest discover -s tests -p 'test_*.py' -v
       - name: Check private wallpaper socket

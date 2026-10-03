@@ -35,7 +35,7 @@ status, two settings, and a how-to-use summary:
 - **Fade step** (`opacity_step`, default `0.1`): how much each fade keypress
   or button changes workspace opacity. Range `0.05`–`0.25`.
 - **Start muted** (`start_muted`, default off): start video wallpapers
-  without audio.
+  with audio muted; the mute button can turn sound back on.
 
 Same settings from the terminal (validated, same limits):
 
@@ -86,6 +86,10 @@ cd ~/.config/omarchy/plugins/artmrn.pip-video
 with `hyprctl configerrors` and rolls everything back on failure. Rerunning is
 safe. Non-interactive: `./install --yes`.
 
+Each install saves the current configs and any replaced helpers under
+`${XDG_STATE_HOME:-~/.local/state}/artmrn.pip-video/install.*`. The installer
+prints the exact backup path. Existing `*.bak` files are left alone.
+
 Checkup anytime: `omarchy-pip-video doctor`.
 
 ## Removal
@@ -97,7 +101,7 @@ omarchy plugin remove artmrn.pip-video
 ```
 
 `./uninstall` removes the symlinks and the managed config blocks, then
-reloads Hyprland. Your `*.bak` backups stay where they are.
+reloads Hyprland. Install snapshots and any older `*.bak` backups are kept.
 
 ## How it works
 
@@ -118,9 +122,10 @@ reloads Hyprland. Your `*.bak` backups stay where they are.
 
 ## Tests
 
-Headless Linux security regression (no Hyprland or mpvpaper required):
+Headless Linux regressions (no running Hyprland or mpvpaper required):
 
 ```bash
+python3 -m unittest discover -s tests -p 'test_*.py' -v
 python3 tests/runtime_socket.py
 ```
 
